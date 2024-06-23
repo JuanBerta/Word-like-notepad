@@ -1,0 +1,13 @@
+[project]
+name = "Word_like_notepad"
+version = "0.1"
+description = "World like notepad is a hybrid between Word and Notepad, made to be simple and in future versions easy to understand"
+
+[tool.cxfreeze]
+executables = [
+    {script = "Word-like-notepad.py", base = "gui"}
+]
+
+[tool.cxfreeze.build_exe]
+excludes = ["unittest"]
+zip_include_packages = ["encodings", "PySide6", "shiboken6"]
