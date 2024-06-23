@@ -5,15 +5,14 @@ import os
 import json
 from datetime import datetime
 from PIL import Image, ImageTk
-import requests
-import io
 
 
 class WordLikeNotepad:
     def __init__(self, master):
         self.master = master
         self.master.title("Word-like Notepad")
-        self.master.geometry("1000x700")
+        self.master.geometry("800x600")  # Set initial size
+        self.master.minsize(400, 300)  # Set minimum size
 
         self.filename = None
         self.settings = self.load_settings()
@@ -28,6 +27,10 @@ class WordLikeNotepad:
         self.create_status_bar()
 
         self.apply_theme(self.settings.get("theme", "light"))
+
+        self.content_saved = True
+        self.text_widget.bind("<<Modified>>", self.on_content_modified)
+        self.master.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def download_icons(self):
         icons = {
@@ -47,11 +50,35 @@ class WordLikeNotepad:
                 response = requests.get(url)
                 img = Image.open(io.BytesIO(response.content))
                 img.save(f"icons/{name}.png")
- """
+        """
+
+    def load_settings(self):
+        settings_file = "notepad_settings.json"
+        default_settings = {
+            "font_family": "Arial",
+            "font_size": 12,
+            "theme": "light",
+        }
+
+        if os.path.exists(settings_file):
+            with open(settings_file, "r") as f:
+                try:
+                    return json.load(f)
+                except json.JSONDecodeError:
+                    print("Error reading settings file. Using default settings.")
+                    return default_settings
+        else:
+            print("Settings file not found. Using default settings.")
+            return default_settings
+
+    def save_settings(self):
+        settings_file = "word_like_notepad_settings.json"
+        with open(settings_file, "w") as f:
+            json.dump(self.settings, f)
 
     def create_toolbar(self):
         self.toolbar = ttk.Frame(self.master)
-        self.toolbar.pack(side=tk.TOP, fill=tk.X)
+        self.toolbar.pack(side=tk.LEFT, fill=tk.X)
 
         self.new_icon = ImageTk.PhotoImage(Image.open("icons/new.png"))
         self.open_icon = ImageTk.PhotoImage(Image.open("icons/open.png"))
@@ -62,7 +89,9 @@ class WordLikeNotepad:
         self.underline_icon = ImageTk.PhotoImage(Image.open("icons/underline.png"))
 
         ttk.Button(self.toolbar, image=self.new_icon, command=self.new_file).pack(
-            side=tk.LEFT, padx=2, pady=2
+            side=tk.LEFT,
+            padx=2,
+            pady=2,
         )
         ttk.Button(self.toolbar, image=self.open_icon, command=self.open_file).pack(
             side=tk.LEFT, padx=2, pady=2
@@ -81,9 +110,36 @@ class WordLikeNotepad:
             self.toolbar, image=self.underline_icon, command=self.toggle_underline
         ).pack(side=tk.LEFT, padx=2, pady=2)
 
+    def create_text_widget(self):
+        self.text_frame = ttk.Frame(self.master)
+        self.text_frame.pack(expand=True, fill=tk.BOTH)
+
+        # Text Widget
+        self.text_widget = tk.Text(self.text_frame, wrap=tk.WORD, undo=True)
+        self.text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Scrollbar
+        self.scrollbar = ttk.Scrollbar(
+            self.text_widget, orient=tk.VERTICAL, command=self.text_widget.yview
+        )
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Configure scrollbar and line numbers
+        self.text_widget.config(yscrollcommand=self.scrollbar.set)
+
+        # Bind events
+        self.text_widget.bind("<KeyPress>", self.on_key_press)
+        self.text_widget.bind("<KeyRelease>", self.on_key_press)
+        self.text_widget.config(
+            yscrollcommand=lambda *args: (self.scrollbar.set(*args))
+        )
+
+        # Ensure line numbers width stays fixed
+        self.text_widget.grid_columnconfigure(0, minsize=1)  # Adjust as needed
+
     def create_format_bar(self):
-        self.format_bar = ttk.Frame(self.master)
-        self.format_bar.pack(side=tk.TOP, fill=tk.X)
+        self.toolbar = ttk.Frame(self.master)
+        self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
         self.fonts = font.families()
         self.font_family = tk.StringVar()
@@ -92,44 +148,22 @@ class WordLikeNotepad:
         self.font_size.set("12")
 
         font_dropdown = ttk.Combobox(
-            self.format_bar, textvariable=self.font_family, values=self.fonts
+            self.toolbar,
+            textvariable=self.font_family,
+            values=self.fonts,
+            state="readonly",
         )
         font_dropdown.pack(side=tk.LEFT, padx=2, pady=2)
         font_dropdown.bind("<<ComboboxSelected>>", self.change_font)
 
         size_dropdown = ttk.Combobox(
-            self.format_bar, textvariable=self.font_size, values=list(range(8, 73))
+            self.toolbar,
+            textvariable=self.font_size,
+            values=list(range(8, 73)),
+            state="readonly",
         )
         size_dropdown.pack(side=tk.LEFT, padx=2, pady=2)
         size_dropdown.bind("<<ComboboxSelected>>", self.change_font)
-
-    def create_text_widget(self):
-        self.text_frame = ttk.Frame(self.master)
-        self.text_frame.pack(expand=True, fill=tk.BOTH)
-
-        self.text_widget = tk.Text(self.text_frame, wrap=tk.WORD, undo=True)
-        self.text_widget.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
-
-        self.scrollbar = ttk.Scrollbar(
-            self.text_frame, orient=tk.VERTICAL, command=self.text_widget.yview
-        )
-        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.text_widget.config(yscrollcommand=self.scrollbar.set)
-
-        self.line_numbers = tk.Text(
-            self.text_frame,
-            width=4,
-            padx=4,
-            takefocus=0,
-            border=0,
-            background="lightgrey",
-            state="disabled",
-        )
-        self.line_numbers.pack(side=tk.LEFT, fill=tk.Y)
-
-        self.text_widget.bind("<Key>", self.on_key_press)
-        self.text_widget.bind("<MouseWheel>", self.on_mousewheel)
 
     def create_menu(self):
         menubar = tk.Menu(self.master)
@@ -162,9 +196,6 @@ class WordLikeNotepad:
         # View menu
         view_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="View", menu=view_menu)
-        view_menu.add_command(
-            label="Toggle Line Numbers", command=self.toggle_line_numbers
-        )
         view_menu.add_command(label="Toggle Dark Mode", command=self.toggle_dark_mode)
 
         # Insert menu
@@ -187,9 +218,24 @@ class WordLikeNotepad:
         tools_menu.add_command(label="Find and Replace", command=self.find_replace)
         tools_menu.add_command(label="Spell Check", command=self.spell_check)
 
+    def insert_image(self):
+        file_path = filedialog.askopenfilename(
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp")]
+        )
+        if file_path:
+            image = Image.open(file_path)
+            image = image.resize((300, 300))  # Resize image
+            photo = ImageTk.PhotoImage(image)
+            self.text_widget.image_create(tk.END, image=photo)
+            self.image = photo  # Keep a reference
+
     def create_status_bar(self):
         self.status_bar = ttk.Label(self.master, text="Ready", anchor=tk.W)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Ensure the status bar expands correctly
+        self.status_bar.grid_columnconfigure(0, weight=1)
+        self.status_bar.grid_rowconfigure(1, weight=0)
 
     def new_file(self):
         self.filename = None
@@ -213,15 +259,23 @@ class WordLikeNotepad:
 
     def save_file(self):
         if self.filename:
-            try:
-                content = self.text_widget.get(1.0, tk.END)
-                with open(self.filename, "w") as file:
-                    file.write(content)
-                self.update_status(f"Saved: {self.filename}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Unable to save file: {str(e)}")
+            file_path = self.filename  # Use existing filename if set
         else:
-            self.save_as()
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            )
+            if not file_path:
+                return  # User cancelled save operation
+
+            self.filename = file_path  # Set filename for subsequent saves
+            self.master.title(f"Word-like Notepad - {os.path.basename(file_path)}")
+
+        with open(self.filename, "w") as file:
+            file.write(self.text_widget.get(1.0, tk.END))
+
+        self.content_saved = True
+        self.status_bar.config(text="Saved")
 
     def save_as(self):
         file_path = filedialog.asksaveasfilename(
@@ -232,6 +286,25 @@ class WordLikeNotepad:
             self.filename = file_path
             self.save_file()
 
+    def on_content_modified(self, event=None):
+        self.content_saved = False
+        self.text_widget.edit_modified(0)
+
+    def on_close(self):
+        if not self.content_saved:
+            response = messagebox.askyesnocancel(
+                "Unsaved Changes",
+                "You have unsaved changes. Do you want to save before exiting?",
+            )
+            if response:  # Save and exit
+                self.save_file()
+                self.master.destroy()
+            elif response is False:  # Discard and exit
+                self.master.destroy()
+            # If response is None (Cancel), do nothing
+        else:
+            self.master.destroy()
+
     def cut(self):
         self.text_widget.event_generate("<<Cut>>")
 
@@ -240,12 +313,6 @@ class WordLikeNotepad:
 
     def paste(self):
         self.text_widget.event_generate("<<Paste>>")
-
-    def toggle_line_numbers(self):
-        if self.line_numbers.winfo_viewable():
-            self.line_numbers.pack_forget()
-        else:
-            self.line_numbers.pack(side=tk.LEFT, fill=tk.Y)
 
     def toggle_dark_mode(self):
         if self.settings.get("theme", "light") == "light":
@@ -258,12 +325,10 @@ class WordLikeNotepad:
             self.text_widget.config(
                 bg="#1e1e1e", fg="#ffffff", insertbackground="white"
             )
-            self.line_numbers.config(bg="#2d2d2d", fg="#ffffff")
         else:
             self.text_widget.config(
                 bg="#ffffff", fg="#000000", insertbackground="black"
             )
-            self.line_numbers.config(bg="lightgrey", fg="#000000")
         self.settings["theme"] = theme
         self.save_settings()
 
@@ -332,23 +397,7 @@ class WordLikeNotepad:
             )
 
     def on_key_press(self, event=None):
-        self.update_line_numbers()
         self.update_status("Editing")
-
-    def on_mousewheel(self, event=None):
-        self.update_line_numbers()
-
-    def update_line_numbers(self):
-        if not self.line_numbers.winfo_viewable():
-            return
-        self.line_numbers.config(state="normal")
-        self.line_numbers.delete(1.0, tk.END)
-        number_of_lines = self.text_widget.index("end-1c").split(".")[0]
-        line_numbers_string = "\n".join(
-            str(no + 1) for no in range(int(number_of_lines))
-        )
-        self.line_numbers.insert(1.0, line_numbers_string)
-        self.line_numbers.config(state="disabled")
 
     def update_status(self, message):
         self.status_bar.config(
@@ -362,52 +411,55 @@ class WordLikeNotepad:
         except FileNotFoundError:
             return {}
 
-    def save_settings(self):
-        with open("settings.json", "w") as f:
-            json.dump(self.settings, f)
-
     def change_font(self, event=None):
-        try:
-            font_family = self.font_family.get()
-            font_size = int(self.font_size.get())
-            current_tags = self.text_widget.tag_names("sel.first")
+        font_family = self.font_family.get()
+        font_size = int(self.font_size.get())
 
-            if "bold" in current_tags:
-                font_weight = "bold"
-            else:
-                font_weight = "normal"
+        # Determine current tags on selected text
+        if self.text_widget.tag_ranges("sel"):
+            start, end = self.text_widget.tag_ranges("sel")
+            current_tags = self.text_widget.tag_names(start)
+        else:
+            return  # No selected text, do nothing
 
-            if "italic" in current_tags:
-                font_slant = "italic"
-            else:
-                font_slant = "roman"
+        # Update font style based on dropdown selections
+        font_style = ""
+        if "bold" in current_tags:
+            font_style += " bold"
+        if "italic" in current_tags:
+            font_style += " italic"
+        if "underline" in current_tags:
+            font_style += " underline"
 
-            if "underline" in current_tags:
-                font_underline = 1
-            else:
-                font_underline = 0
+        # Create or update font tag for selected text
+        font_tag = f"{font_family}_{font_size}_{font_style}"
+        self.text_widget.tag_configure(
+            font_tag, font=(font_family, font_size, font_style.strip())
+        )
 
-            new_font = font.Font(
-                family=font_family,
-                size=font_size,
-                weight=font_weight,
-                slant=font_slant,
-                underline=font_underline,
-            )
+        # Apply tag to selected text
+        self.text_widget.tag_add(font_tag, start, end)
 
-            # Apply the new font to the selected text or all text if no selection
-            if self.text_widget.tag_ranges("sel"):
-                self.text_widget.tag_configure("custom_font", font=new_font)
-                self.text_widget.tag_add("custom_font", "sel.first", "sel.last")
-            else:
-                self.text_widget.configure(font=new_font)
+        # Remove previous font tags from selected text
+        for tag in current_tags:
+            if (
+                tag.startswith(("Arial_", "12_", "bold", "italic", "underline"))
+                and tag != font_tag
+            ):
+                self.text_widget.tag_remove(tag, start, end)
 
-            # Update the default font for future text input
-            self.default_font.configure(family=font_family, size=font_size)
+        # Save font settings (optional)
+        self.settings["font_family"] = font_family
+        self.settings["font_size"] = font_size
+        self.save_settings()
 
-        except tk.TclError:
-            # Handle the case where an invalid font or size is selected
-            pass
+    def toggle_theme(self):
+        if self.settings["theme"] == "light":
+            self.settings["theme"] = "dark"
+        else:
+            self.settings["theme"] = "light"
+        self.apply_theme(self.settings["theme"])
+        self.save_settings()
 
     def change_text_color(self):
         color = askcolor(title="Choose text color")[1]
@@ -436,46 +488,37 @@ class WordLikeNotepad:
                     self.text_widget.tag_remove(tag, "sel.first", "sel.last")
 
     def toggle_bold(self):
-        current_tags = self.text_widget.tag_names("sel.first")
-        if "bold" in current_tags:
-            self.text_widget.tag_remove("bold", "sel.first", "sel.last")
-        else:
-            self.text_widget.tag_add("bold", "sel.first", "sel.last")
-        self.text_widget.tag_configure(
-            "bold", font=(self.font_family.get(), int(self.font_size.get()), "bold")
-        )
-        self.change_font()
+        if self.text_widget.tag_ranges("sel"):
+            current_tags = self.text_widget.tag_names("sel.first")
+            if "bold" in current_tags:
+                self.text_widget.tag_remove("bold", "sel.first", "sel.last")
+            else:
+                self.text_widget.tag_add("bold", "sel.first", "sel.last")
+
+            # Update font with current settings
+            self.change_font()
 
     def toggle_italic(self):
-        current_tags = self.text_widget.tag_names("sel.first")
-        if "italic" in current_tags:
-            self.text_widget.tag_remove("italic", "sel.first", "sel.last")
-        else:
-            self.text_widget.tag_add("italic", "sel.first", "sel.last")
-        self.text_widget.tag_configure(
-            "italic", font=(self.font_family.get(), int(self.font_size.get()), "italic")
-        )
-        self.change_font()
+        if self.text_widget.tag_ranges("sel"):
+            current_tags = self.text_widget.tag_names("sel.first")
+            if "italic" in current_tags:
+                self.text_widget.tag_remove("italic", "sel.first", "sel.last")
+            else:
+                self.text_widget.tag_add("italic", "sel.first", "sel.last")
+
+            # Update font with current settings
+            self.change_font()
 
     def toggle_underline(self):
-        current_tags = self.text_widget.tag_names("sel.first")
-        if "underline" in current_tags:
-            self.text_widget.tag_remove("underline", "sel.first", "sel.last")
-        else:
-            self.text_widget.tag_add("underline", "sel.first", "sel.last")
-        self.text_widget.tag_configure("underline", underline=True)
-        self.change_font()
+        if self.text_widget.tag_ranges("sel"):
+            current_tags = self.text_widget.tag_names("sel.first")
+            if "underline" in current_tags:
+                self.text_widget.tag_remove("underline", "sel.first", "sel.last")
+            else:
+                self.text_widget.tag_add("underline", "sel.first", "sel.last")
 
-    def insert_image(self):
-        file_path = filedialog.askopenfilename(
-            filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp")]
-        )
-        if file_path:
-            image = Image.open(file_path)
-            image = image.resize((300, 300))  # Resize image
-            photo = ImageTk.PhotoImage(image)
-            self.text_widget.image_create(tk.END, image=photo)
-            self.text_widget.image = photo  # Keep a reference
+            # Update font with current settings
+            self.change_font()
 
     def insert_table(self):
         top = tk.Toplevel(self.master)
